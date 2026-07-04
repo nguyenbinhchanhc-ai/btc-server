@@ -11,7 +11,7 @@ const wss = new WebSocket.Server({ server });
 app.use(express.static('public'));
 
 // Cache dữ liệu nến & chỉ báo
-let candles = []; // Mỗi nến: { time: number, open: number, high: number, low: number, close: number, volume: number, rsi, ema12, ema26, macd }
+let candles = []; 
 let currentTicker = { price: 0, change24h: 0, high24h: 0, low24h: 0, volume24h: 0 };
 let indicators = { rsi: null, ema12: null, ema26: null, macd: null };
 
@@ -31,7 +31,7 @@ let rubikData = {
   }
 };
 
-// Phân tích dòng tiền thời gian thực qua WebSocket trades
+// Phân tích dòng tiền thời gian thực qua WebSocket trades (Thực tế 100%)
 let recentTrades = []; // [{ time: number, sz: number, side: 'buy'|'sell' }]
 
 // Cache phân phối dòng tiền của 5 khung thời gian để gửi về client
@@ -63,70 +63,78 @@ async function fetchHistoricalCandles() {
       })).reverse();
       calculateIndicators();
       console.log(`Đã tải thành công ${candles.length} nến lịch sử từ OKX REST API.`);
-      
-      // Khởi tạo trades giả lập để làm đầy dữ liệu 24h ban đầu
-      generateFakeTradesFromCandles();
     }
   } catch (error) {
     console.error('Lỗi khi tải nến lịch sử:', error.message);
   }
 }
 
-// Giả lập trades lịch sử dựa trên nến để lấp đầy dữ liệu ban đầu cho các khung thời gian
-function generateFakeTradesFromCandles() {
-  recentTrades = [];
-  candles.forEach(c => {
-    const numTrades = 20; // 20 trades mỗi nến 5m
-    const volPerTrade = c.volume / numTrades;
-    let buyRatio = 0.5;
-    
-    if (c.close > c.open) buyRatio = 0.53;
-    else if (c.close < c.open) buyRatio = 0.47;
-
-    for (let i = 0; i < numTrades; i++) {
-      const side = Math.random() < buyRatio ? 'buy' : 'sell';
-      const rand = Math.random();
-      let sz = volPerTrade;
-      
-      // Phân bổ ngẫu nhiên kích cỡ lệnh
-      if (rand < 0.04) sz = volPerTrade * 10;      // Siêu lớn
-      else if (rand < 0.15) sz = volPerTrade * 3;  // Lớn
-      else if (rand < 0.45) sz = volPerTrade * 1;  // Trung bình
-      else sz = volPerTrade * 0.3;                 // Nhỏ
-
-      recentTrades.push({
-        time: c.time + i * (5 * 60 * 1000 / numTrades),
-        sz: sz,
-        side: side
-      });
+// Gọi OKX REST API để lấy 100 trades thực tế gần nhất làm dữ liệu ban đầu
+async function fetchRecentTrades() {
+  try {
+    const url = 'https://www.okx.com/api/v5/market/trades?instId=BTC-USDT&limit=100';
+    const response = await fetch(url);
+    const result = await response.json();
+    if (result.code === '0' && result.data) {
+      recentTrades = result.data.map(t => ({
+        time: parseInt(t.ts),
+        sz: parseFloat(t.sz),
+        side: t.side
+      })).reverse(); // Đảo ngược để theo thứ tự thời gian tăng dần
+      console.log(`Đã tải thành công ${recentTrades.length} giao dịch thực tế từ OKX REST API.`);
     }
-  });
-  console.log(`Đã giả lập ${recentTrades.length} trades lịch sử để lấp đầy dữ liệu.`);
-  calculateAllOrderFlows();
+  } catch (error) {
+    console.error('Lỗi khi tải giao dịch gần đây:', error.message);
+  }
 }
 
-// Gọi OKX Rubik API để lấy dữ liệu thống kê Long/Short và Taker Volume (tất cả các period)
+// Gọi OKX Rubik API để lấy dữ liệu thống kê Long/Short và Taker Volume (downsample cho 15m và 4H)
 async function fetchRubikData() {
   try {
-    const periodsLS = { '5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D' };
-    const periodsTV = { '5m': '5m', '1h': '1H', '1d': '1D' };
+    // 1. Fetch Margin Loan Ratios (OKX chỉ hỗ trợ 5m, 1H, 1D)
+    const lsUrl5m = 'https://www.okx.com/api/v5/rubik/stat/margin/loan-ratio?ccy=BTC&period=5m';
+    const lsUrl1h = 'https://www.okx.com/api/v5/rubik/stat/margin/loan-ratio?ccy=BTC&period=1H';
+    const lsUrl1d = 'https://www.okx.com/api/v5/rubik/stat/margin/loan-ratio?ccy=BTC&period=1D';
 
-    // 1. Fetch Margin Loan Ratios (Tỷ lệ long/short ký quỹ)
-    for (const [key, apiPeriod] of Object.entries(periodsLS)) {
-      const url = `https://www.okx.com/api/v5/rubik/stat/margin/loan-ratio?ccy=BTC&period=${apiPeriod}`;
-      const res = await fetch(url);
-      const result = await res.json();
-      if (result.code === '0' && result.data) {
-        rubikData.longShortRatio[key] = result.data.slice(0, 50).map(d => ({
-          time: parseInt(d[0]),
-          ratio: parseFloat(d[1])
-        })).reverse();
-      }
-      // Delay nhỏ để tránh rate limit
-      await new Promise(r => setTimeout(r, 100));
+    const [res5m, res1h, res1d] = await Promise.all([
+      fetch(lsUrl5m).then(r => r.json()),
+      fetch(lsUrl1h).then(r => r.json()),
+      fetch(lsUrl1d).then(r => r.json())
+    ]);
+
+    if (res5m.code === '0' && res5m.data) {
+      const data5m = res5m.data.slice(0, 100).map(d => ({
+        time: parseInt(d[0]),
+        ratio: parseFloat(d[1])
+      })).reverse();
+      
+      rubikData.longShortRatio['5m'] = data5m.slice(-50);
+      
+      // Downsample 5m -> 15m (cứ 3 phần tử lấy 1)
+      rubikData.longShortRatio['15m'] = data5m.filter((_, idx) => idx % 3 === 0).slice(-50);
+    }
+
+    if (res1h.code === '0' && res1h.data) {
+      const data1h = res1h.data.slice(0, 100).map(d => ({
+        time: parseInt(d[0]),
+        ratio: parseFloat(d[1])
+      })).reverse();
+
+      rubikData.longShortRatio['1h'] = data1h.slice(-50);
+      
+      // Downsample 1H -> 4H (cứ 4 phần tử lấy 1)
+      rubikData.longShortRatio['4h'] = data1h.filter((_, idx) => idx % 4 === 0).slice(-50);
+    }
+
+    if (res1d.code === '0' && res1d.data) {
+      rubikData.longShortRatio['1d'] = res1d.data.slice(0, 50).map(d => ({
+        time: parseInt(d[0]),
+        ratio: parseFloat(d[1])
+      })).reverse();
     }
 
     // 2. Fetch Taker Volumes (Spot Taker Buy/Sell)
+    const periodsTV = { '5m': '5m', '1h': '1H', '1d': '1D' };
     for (const [key, apiPeriod] of Object.entries(periodsTV)) {
       const url = `https://www.okx.com/api/v5/rubik/stat/taker-volume?ccy=BTC&period=${apiPeriod}&instType=SPOT`;
       const res = await fetch(url);
@@ -143,13 +151,13 @@ async function fetchRubikData() {
           };
         }).reverse();
       }
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, 50));
     }
 
-    console.log('Đã tải thành công toàn bộ dữ liệu thống kê Rubik nâng cao từ OKX.');
+    console.log('Đã tải thành công dữ liệu thống kê Rubik thực tế từ OKX.');
     broadcast({ type: 'rubik', rubikData: rubikData });
   } catch (error) {
-    console.error('Lỗi khi tải dữ liệu Rubik nâng cao:', error.message);
+    console.error('Lỗi khi tải dữ liệu Rubik thực tế:', error.message);
   }
 }
 
@@ -224,27 +232,24 @@ function getFlowForDuration(durationMs) {
   return flow;
 }
 
-// Tính toán đồng thời cả 5 khung thời gian của Order Flow
-let flowUpdatePending = false;
-function calculateAllOrderFlows() {
-  if (flowUpdatePending) return;
-  flowUpdatePending = true;
+// Định kỳ mỗi 1 giây: dọn dẹp trades cũ, giới hạn dung lượng để bảo vệ CPU, và tính toán flow
+setInterval(() => {
+  const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
+  recentTrades = recentTrades.filter(t => t.time >= cutoff24h);
 
-  setTimeout(() => {
-    // Giới hạn recentTrades tối đa 24h để tránh phình bộ nhớ
-    const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
-    recentTrades = recentTrades.filter(t => t.time >= cutoff24h);
+  // Bảo vệ CPU: giới hạn tối đa 1000 trades thực tế gần nhất
+  if (recentTrades.length > 1000) {
+    recentTrades = recentTrades.slice(-1000);
+  }
 
-    orderFlows['5m'] = getFlowForDuration(5 * 60 * 1000);
-    orderFlows['15m'] = getFlowForDuration(15 * 60 * 1000);
-    orderFlows['1h'] = getFlowForDuration(60 * 60 * 1000);
-    orderFlows['4h'] = getFlowForDuration(4 * 60 * 60 * 1000);
-    orderFlows['1d'] = getFlowForDuration(24 * 60 * 60 * 1000);
+  orderFlows['5m'] = getFlowForDuration(5 * 60 * 1000);
+  orderFlows['15m'] = getFlowForDuration(15 * 60 * 1000);
+  orderFlows['1h'] = getFlowForDuration(60 * 60 * 1000);
+  orderFlows['4h'] = getFlowForDuration(4 * 60 * 60 * 1000);
+  orderFlows['1d'] = getFlowForDuration(24 * 60 * 60 * 1000);
 
-    orderFlowsChanged = true;
-    flowUpdatePending = false;
-  }, 500);
-}
+  orderFlowsChanged = true;
+}, 1000);
 
 // Kết nối WebSocket OKX
 let okxWs;
@@ -325,7 +330,6 @@ function connectOKX() {
               side: t.side
             });
           });
-          calculateAllOrderFlows();
         }
       }
     } catch (err) {
@@ -353,7 +357,7 @@ function broadcast(dataObj) {
   });
 }
 
-// Loop gửi dữ liệu realtime (1 giây một lần)
+// Loop gửi dữ liệu định kỳ mỗi 1 giây (Throttle)
 setInterval(() => {
   if (tickerChanged) {
     broadcast({ type: 'ticker', ticker: currentTicker });
@@ -384,6 +388,7 @@ wss.on('connection', (ws) => {
 
 async function init() {
   await fetchHistoricalCandles();
+  await fetchRecentTrades();
   await fetchRubikData();
   connectOKX();
   
