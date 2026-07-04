@@ -46,6 +46,14 @@ let lsRatioChart = null;
 const MAX_CHART_POINTS = 50;
 let lastPrice = 0;
 
+// Cache dữ liệu để chuyển đổi period không độ trễ
+let cachedOrderFlows = null;
+let cachedRubikData = null;
+
+let currentFlowPeriod = '1d';
+let currentTakerPeriod = '5m';
+let currentLsPeriod = '5m';
+
 function formatCurrency(num) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(num);
 }
@@ -55,7 +63,11 @@ function formatNumber(num) {
 }
 
 function formatBTC(num) {
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(num) + ' BTC';
+  // Hiển thị dạng K (Nghìn) nếu số lớn hơn 1000 để giống OKX
+  if (num >= 1000) {
+    return (num / 1000).toFixed(2) + ' N BTC';
+  }
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num) + ' BTC';
 }
 
 function formatTime(timestamp) {
@@ -181,14 +193,26 @@ function initCharts(historicalCandles, rubikData) {
     }
   });
 
-  // 3. Biểu đồ tròn Phân bổ Dòng tiền (24h)
+  // 3. Biểu đồ tròn Phân bổ Dòng tiền (Chuẩn OKX: Đỏ bên phải, Xanh bên trái)
   flowDoughnutChart = new Chart(ctxFlow, {
     type: 'doughnut',
     data: {
-      labels: ['Siêu lớn', 'Lớn', 'Trung bình', 'Nhỏ'],
+      labels: [
+        'Ra - Siêu lớn', 'Ra - Lớn', 'Ra - T.Bình', 'Ra - Nhỏ',
+        'Vào - Nhỏ', 'Vào - T.Bình', 'Vào - Lớn', 'Vào - Siêu lớn'
+      ],
       datasets: [{
-        data: [0, 0, 0, 0],
-        backgroundColor: ['#ff5e00', '#ff9f43', '#54a0ff', '#5f27cd'],
+        data: [0, 0, 0, 0, 0, 0, 0, 0],
+        backgroundColor: [
+          '#b3001e', // Ra - Siêu lớn (Đỏ đậm)
+          '#f6465d', // Ra - Lớn
+          '#ff7373', // Ra - Trung bình
+          '#ffb3b3', // Ra - Nhỏ
+          '#a3ffd6', // Vào - Nhỏ (Xanh rất nhạt)
+          '#39e6a0', // Vào - Trung bình
+          '#0ecb81', // Vào - Lớn
+          '#0b6623'  // Vào - Siêu lớn (Xanh đậm)
+        ],
         borderWidth: 0,
         hoverOffset: 4
       }]
@@ -203,27 +227,40 @@ function initCharts(historicalCandles, rubikData) {
     }
   });
 
-  // 4. Biểu đồ cột Taker Net Volume (Rubik 5m)
-  const tvLabels = rubikData?.takerVolume?.map(v => formatTime(v.time)) || [];
-  const tvNetData = rubikData?.takerVolume?.map(v => v.netVol) || [];
-  const tvColors = tvNetData.map(v => v >= 0 ? '#0ecb81' : '#f6465d');
+  // 4. Biểu đồ cột đôi Mua/Bán Taker (Chuẩn OKX)
+  const tvData = rubikData?.takerVolume?.[currentTakerPeriod] || [];
+  const tvLabels = tvData.map(v => formatTime(v.time));
+  const tvBuyData = tvData.map(v => v.buyVol);
+  const tvSellData = tvData.map(v => v.sellVol);
 
   takerVolumeChart = new Chart(ctxTaker, {
     type: 'bar',
     data: {
       labels: tvLabels,
-      datasets: [{
-        label: 'Net Inflow (BTC)',
-        data: tvNetData,
-        backgroundColor: tvColors,
-        borderRadius: 4
-      }]
+      datasets: [
+        {
+          label: 'Khối lượng mua (BTC)',
+          data: tvBuyData,
+          backgroundColor: '#0ecb81',
+          borderRadius: 3
+        },
+        {
+          label: 'Khối lượng bán (BTC)',
+          data: tvSellData,
+          backgroundColor: '#f6465d',
+          borderRadius: 3
+        }
+      ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false }
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: { color: '#848e9c', font: { family: 'Outfit', size: 10 } }
+        }
       },
       scales: {
         x: { grid: { color: 'rgba(255, 255, 255, 0.03)' }, ticks: { color: '#848e9c', font: { family: 'Outfit' } } },
@@ -232,9 +269,10 @@ function initCharts(historicalCandles, rubikData) {
     }
   });
 
-  // 5. Biểu đồ đường Long/Short Ratio (Rubik 5m)
-  const lsLabels = rubikData?.longShortRatio?.map(v => formatTime(v.time)) || [];
-  const lsValues = rubikData?.longShortRatio?.map(v => v.ratio) || [];
+  // 5. Biểu đồ đường Tỷ lệ Long/Short Ký quỹ BTC (Trồi sụt trơn tru)
+  const lsData = rubikData?.longShortRatio?.[currentLsPeriod] || [];
+  const lsLabels = lsData.map(v => formatTime(v.time));
+  const lsValues = lsData.map(v => v.ratio);
 
   lsRatioChart = new Chart(ctxLs, {
     type: 'line',
@@ -260,7 +298,10 @@ function initCharts(historicalCandles, rubikData) {
       },
       scales: {
         x: { grid: { color: 'rgba(255, 255, 255, 0.03)' }, ticks: { color: '#848e9c', font: { family: 'Outfit' } } },
-        y: { grid: { color: 'rgba(255, 255, 255, 0.03)' }, ticks: { color: '#848e9c', font: { family: 'Outfit' } } }
+        y: { 
+          grid: { color: 'rgba(255, 255, 255, 0.03)' }, 
+          ticks: { color: '#848e9c', font: { family: 'Outfit' } } 
+        }
       }
     }
   });
@@ -396,38 +437,42 @@ function updateIndicatorsUI(ind) {
   }
 }
 
-// Cập nhật dữ liệu Rubik Chart
+// Cập nhật dữ liệu Rubik Charts
 function updateRubikCharts(rubikData) {
-  if (!takerVolumeChart || !lsRatioChart || !rubikData) return;
+  if (!rubikData) return;
+  cachedRubikData = rubikData;
 
   try {
-    // Taker Volume
-    if (rubikData.takerVolume) {
-      const tvLabels = rubikData.takerVolume.map(v => formatTime(v.time));
-      const tvNetData = rubikData.takerVolume.map(v => v.netVol);
-      const tvColors = tvNetData.map(v => v >= 0 ? '#0ecb81' : '#f6465d');
+    // 1. Taker Volume (Grouped Bar Chart)
+    if (takerVolumeChart && rubikData.takerVolume?.[currentTakerPeriod]) {
+      const tvData = rubikData.takerVolume[currentTakerPeriod];
+      const tvLabels = tvData.map(v => formatTime(v.time));
+      const tvBuyData = tvData.map(v => v.buyVol);
+      const tvSellData = tvData.map(v => v.sellVol);
 
       takerVolumeChart.data.labels = tvLabels;
-      takerVolumeChart.data.datasets[0].data = tvNetData;
-      takerVolumeChart.data.datasets[0].backgroundColor = tvColors;
+      takerVolumeChart.data.datasets[0].data = tvBuyData;
+      takerVolumeChart.data.datasets[1].data = tvSellData;
       takerVolumeChart.update();
     }
 
-    // Long/Short Ratio
-    if (rubikData.longShortRatio && rubikData.longShortRatio.length > 0) {
-      const lsLabels = rubikData.longShortRatio.map(v => formatTime(v.time));
-      const lsValues = rubikData.longShortRatio.map(v => v.ratio);
+    // 2. Long/Short Ratio (Margin Loan Ratio)
+    if (lsRatioChart && rubikData.longShortRatio?.[currentLsPeriod]) {
+      const lsData = rubikData.longShortRatio[currentLsPeriod];
+      const lsLabels = lsData.map(v => formatTime(v.time));
+      const lsValues = lsData.map(v => v.ratio);
       
       lsRatioChart.data.labels = lsLabels;
       lsRatioChart.data.datasets[0].data = lsValues;
       lsRatioChart.update();
 
-      const currentRatio = lsValues[lsValues.length - 1];
-      if (currentRatio !== undefined) {
+      // Cập nhật badge ratio hiện tại ở tiêu đề
+      if (lsValues.length > 0) {
+        const currentRatio = lsValues[lsValues.length - 1];
         lsCurrentRatioEl.innerText = `L/S Ratio: ${currentRatio.toFixed(2)}`;
-        if (currentRatio > 1.05) {
+        if (currentRatio > 1.2) {
           lsCurrentRatioEl.className = 'sentiment-badge bullish';
-        } else if (currentRatio < 0.95) {
+        } else if (currentRatio < 0.8) {
           lsCurrentRatioEl.className = 'sentiment-badge bearish';
         } else {
           lsCurrentRatioEl.className = 'sentiment-badge neutral';
@@ -439,24 +484,34 @@ function updateRubikCharts(rubikData) {
   }
 }
 
-// Cập nhật Phân tích dòng tiền 24h
-function updateOrderFlowUI(flow) {
+// Cập nhật Phân tích dòng tiền (Đầy đủ khung thời gian)
+function updateOrderFlowUI(flows) {
+  if (!flows) return;
+  cachedOrderFlows = flows;
+
+  const flow = flows[currentFlowPeriod];
   if (!flow) return;
+
   try {
     const netInflow = flow.totalBuy - flow.totalSell;
-    flowNetValEl.innerText = (netInflow >= 0 ? '+' : '') + formatNumber(netInflow) + ' BTC';
+    const isNetOutflow = netInflow < 0;
     
-    if (netInflow > 0) {
-      flowNetValEl.className = 'flow-net-val text-green';
-    } else if (netInflow < 0) {
+    flowNetValEl.innerText = (isNetOutflow ? '' : '+') + formatNumber(netInflow) + ' BTC';
+    
+    // Label hiển thị ròng "Dòng tiền ra ròng" / "Dòng tiền vào ròng" giống OKX
+    const flowNetLabelEl = document.querySelector('.flow-net-label');
+    if (isNetOutflow) {
+      flowNetLabelEl.innerText = 'DÒNG TIỀN RA RÒNG';
       flowNetValEl.className = 'flow-net-val text-red';
     } else {
-      flowNetValEl.className = 'flow-net-val neutral';
+      flowNetLabelEl.innerText = 'DÒNG TIỀN VÀO RÒNG';
+      flowNetValEl.className = 'flow-net-val text-green';
     }
 
     flowInValEl.innerText = formatBTC(flow.totalBuy);
     flowOutValEl.innerText = formatBTC(flow.totalSell);
 
+    // Điền bảng
     flowInSlEl.innerText = formatNumber(flow.buy.superLarge);
     flowOutSlEl.innerText = formatNumber(flow.sell.superLarge);
     flowInLEl.innerText = formatNumber(flow.buy.large);
@@ -466,18 +521,62 @@ function updateOrderFlowUI(flow) {
     flowInSEl.innerText = formatNumber(flow.buy.small);
     flowOutSEl.innerText = formatNumber(flow.sell.small);
 
+    // Cập nhật Doughnut Chart (Cấu trúc 8 phần đoạn của OKX: nửa đỏ bên phải, nửa xanh bên trái)
     if (flowDoughnutChart) {
-      const totalSL = flow.buy.superLarge + flow.sell.superLarge;
-      const totalL = flow.buy.large + flow.sell.large;
-      const totalM = flow.buy.medium + flow.sell.medium;
-      const totalS = flow.buy.small + flow.sell.small;
-
-      flowDoughnutChart.data.datasets[0].data = [totalSL, totalL, totalM, totalS];
+      flowDoughnutChart.data.datasets[0].data = [
+        flow.sell.superLarge,
+        flow.sell.large,
+        flow.sell.medium,
+        flow.sell.small,
+        flow.buy.small,
+        flow.buy.medium,
+        flow.buy.large,
+        flow.buy.superLarge
+      ];
       flowDoughnutChart.update();
     }
   } catch (err) {
     console.error("Lỗi cập nhật UI Order Flow:", err);
   }
+}
+
+// Gắn bộ lắng nghe click cho các period button
+function setupPeriodListeners() {
+  // 1. Phân tích Dòng tiền periods
+  document.querySelectorAll('#flow-periods .period-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('#flow-periods .period-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      currentFlowPeriod = e.target.dataset.period;
+      if (cachedOrderFlows) {
+        updateOrderFlowUI(cachedOrderFlows);
+      }
+    });
+  });
+
+  // 2. Mua/bán Taker periods
+  document.querySelectorAll('#taker-periods .period-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('#taker-periods .period-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      currentTakerPeriod = e.target.dataset.period;
+      if (cachedRubikData) {
+        updateRubikCharts(cachedRubikData);
+      }
+    });
+  });
+
+  // 3. Tỷ lệ Long/Short periods
+  document.querySelectorAll('#ls-periods .period-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('#ls-periods .period-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      currentLsPeriod = e.target.dataset.period;
+      if (cachedRubikData) {
+        updateRubikCharts(cachedRubikData);
+      }
+    });
+  });
 }
 
 // Kết nối WebSocket đến Backend server
@@ -501,13 +600,14 @@ function connectWS() {
         if (data.candles) {
           try {
             initCharts(data.candles, data.rubikData);
+            setupPeriodListeners(); // Chỉ gắn sự kiện một lần sau khi vẽ chart
           } catch (chartErr) {
             console.error("Lỗi khởi tạo biểu đồ:", chartErr);
           }
         }
         updateTickerUI(data.ticker);
         updateIndicatorsUI(data.indicators);
-        updateOrderFlowUI(data.orderFlow);
+        updateOrderFlowUI(data.orderFlows);
         updateRubikCharts(data.rubikData);
       } 
       else if (data.type === 'ticker') {
@@ -517,8 +617,8 @@ function connectWS() {
         updateIndicatorsUI(data.indicators);
         updateChart(data.lastCandle, data.indicators);
       } 
-      else if (data.type === 'orderFlow') {
-        updateOrderFlowUI(data.orderFlow);
+      else if (data.type === 'orderFlows') {
+        updateOrderFlowUI(data.orderFlows);
       } 
       else if (data.type === 'rubik') {
         updateRubikCharts(data.rubikData);

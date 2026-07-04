@@ -175,6 +175,14 @@ body {
   padding-bottom: 10px;
 }
 
+.flex-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .card-title {
   font-size: 0.9rem;
   font-weight: 600;
@@ -362,6 +370,39 @@ body {
   font-weight: 600;
 }
 
+/* Period Selectors Tab Bar */
+.period-selectors {
+  display: flex;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.period-btn {
+  font-family: 'Outfit', sans-serif;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-muted);
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.period-btn:hover {
+  color: var(--text-main);
+}
+
+.period-btn.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
 /* Charts Card Spec */
 .price-chart-container {
   grid-column: span 12;
@@ -377,7 +418,7 @@ body {
   position: relative;
 }
 
-/* NEW: Order Flow Card Specifics */
+/* Order Flow Card Specifics */
 .order-flow-card {
   grid-column: span 6;
 }
@@ -497,12 +538,12 @@ body {
   margin-right: 8px;
 }
 
-.dot.super-large { background-color: #ff5e00; }
-.dot.large { background-color: #ff9f43; }
-.dot.medium { background-color: #54a0ff; }
-.dot.small { background-color: #5f27cd; }
+.dot.super-large { background-color: #0b6623; }
+.dot.large { background-color: #0ecb81; }
+.dot.medium { background-color: #39e6a0; }
+.dot.small { background-color: #a3ffd6; }
 
-/* NEW: Taker Net Volume & Sentiment */
+/* Taker Net Volume & Sentiment */
 .taker-volume-container {
   grid-column: span 6;
 }

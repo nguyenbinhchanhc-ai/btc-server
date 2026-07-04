@@ -144,57 +144,63 @@
         </div>
       </section>
 
-      <!-- NEW: Order Flow Card -->
+      <!-- Order Flow Card -->
       <section class="card order-flow-card">
-        <div class="card-header">
-          <span class="card-title">PHÂN TÍCH DÒNG TIỀN (24H QUA)</span>
-          <span class="live-tag">REALTIME</span>
+        <div class="card-header flex-header">
+          <span class="card-title text-uppercase font-weight-bold">Phân tích dòng tiền</span>
+          <div class="period-selectors" id="flow-periods">
+            <button class="period-btn" data-period="5m">5 phút</button>
+            <button class="period-btn" data-period="15m">15 phút</button>
+            <button class="period-btn" data-period="1h">1 giờ</button>
+            <button class="period-btn" data-period="4h">4 giờ</button>
+            <button class="period-btn active" data-period="1d">1 ngày</button>
+          </div>
         </div>
         <div class="order-flow-content">
           <div class="flow-chart-wrapper">
             <canvas id="flowDoughnutChart"></canvas>
             <div class="flow-net-display">
-              <span class="flow-net-label">RÒNG (24H)</span>
+              <span class="flow-net-label">RÒNG</span>
               <span id="flow-net-val" class="flow-net-val neutral">0.00 BTC</span>
             </div>
           </div>
           <div class="flow-stats-wrapper">
             <div class="flow-total-grid">
               <div class="flow-total-item">
-                <span class="flow-total-label">Dòng tiền VÀO (Mua)</span>
+                <span class="flow-total-label">Dòng tiền vào</span>
                 <span id="flow-in-val" class="flow-total-val text-green">0.00 BTC</span>
               </div>
               <div class="flow-total-item">
-                <span class="flow-total-label">Dòng tiền RA (Bán)</span>
+                <span class="flow-total-label">Dòng tiền ra</span>
                 <span id="flow-out-val" class="flow-total-val text-red">0.00 BTC</span>
               </div>
             </div>
             <table class="flow-details-table">
               <thead>
                 <tr>
-                  <th>Phân Phân Khúc</th>
+                  <th>Phân Khúc</th>
                   <th class="text-green">Vào (BTC)</th>
                   <th class="text-red">Ra (BTC)</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td><span class="dot super-large"></span>Siêu lớn (≥ 1.0)</td>
+                  <td><span class="dot super-large"></span>Siêu lớn</td>
                   <td id="flow-in-sl" class="text-green">0.00</td>
                   <td id="flow-out-sl" class="text-red">0.00</td>
                 </tr>
                 <tr>
-                  <td><span class="dot large"></span>Lớn (0.1 - 1.0)</td>
+                  <td><span class="dot large"></span>Lớn</td>
                   <td id="flow-in-l" class="text-green">0.00</td>
                   <td id="flow-out-l" class="text-red">0.00</td>
                 </tr>
                 <tr>
-                  <td><span class="dot medium"></span>T.Bình (0.01 - 0.1)</td>
+                  <td><span class="dot medium"></span>Trung bình</td>
                   <td id="flow-in-m" class="text-green">0.00</td>
                   <td id="flow-out-m" class="text-red">0.00</td>
                 </tr>
                 <tr>
-                  <td><span class="dot small"></span>Nhỏ (&lt; 0.01)</td>
+                  <td><span class="dot small"></span>Nhỏ</td>
                   <td id="flow-in-s" class="text-green">0.00</td>
                   <td id="flow-out-s" class="text-red">0.00</td>
                 </tr>
@@ -204,22 +210,34 @@
         </div>
       </section>
 
-      <!-- NEW: Taker Net Volume Chart -->
+      <!-- Mua/bán Taker Chart Container -->
       <section class="card chart-card taker-volume-container">
-        <div class="card-header">
-          <span class="card-title">DÒNG TIỀN RÒNG TAKER BUY/SELL (5M)</span>
+        <div class="card-header flex-header">
+          <span class="card-title text-uppercase font-weight-bold">Mua/bán BTC của taker</span>
+          <div class="period-selectors" id="taker-periods">
+            <button class="period-btn active" data-period="5m">5 phút</button>
+            <button class="period-btn" data-period="1h">1 giờ</button>
+            <button class="period-btn" data-period="1d">1 ngày</button>
+          </div>
         </div>
         <div class="chart-wrapper">
           <canvas id="takerVolumeChart"></canvas>
         </div>
       </section>
 
-      <!-- NEW: Sentiment Long/Short Ratio Card -->
+      <!-- Sentiment Margin Loan Ratio Card -->
       <section class="card chart-card sentiment-ratio-container">
-        <div class="card-header">
+        <div class="card-header flex-header">
           <div class="sentiment-title-area">
-            <span class="card-title">TỶ LỆ LONG/SHORT TÀI KHOẢN (5M)</span>
+            <span class="card-title text-uppercase font-weight-bold">Tỷ lệ long/short ký quỹ BTC</span>
             <span id="ls-current-ratio" class="sentiment-badge neutral">Ratio: 1.00</span>
+          </div>
+          <div class="period-selectors" id="ls-periods">
+            <button class="period-btn active" data-period="5m">5 phút</button>
+            <button class="period-btn" data-period="15m">15 phút</button>
+            <button class="period-btn" data-period="1h">1 giờ</button>
+            <button class="period-btn" data-period="4h">4 giờ</button>
+            <button class="period-btn" data-period="1d">1 ngày</button>
           </div>
         </div>
         <div class="chart-wrapper">
