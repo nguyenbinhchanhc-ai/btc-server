@@ -213,90 +213,114 @@ function connectWS() {
 
       // 1. Nhận dữ liệu nến lịch sử ban đầu để vẽ chart
       if (data.candles && !priceChart) {
-        initCharts(data.candles);
+        try {
+          initCharts(data.candles);
+        } catch (chartErr) {
+          console.error("Lỗi khởi tạo biểu đồ:", chartErr);
+        }
       }
 
       // 2. Nhận Ticker cập nhật
       if (data.ticker) {
-        const t = data.ticker;
+        try {
+          const t = data.ticker;
 
-        // Flash hiệu ứng tăng/giảm giá
-        if (lastPrice > 0 && t.price !== lastPrice) {
-          priceEl.className = 'price-display ' + (t.price > lastPrice ? 'price-up' : 'price-down');
+          // Flash hiệu ứng tăng/giảm giá
+          if (lastPrice > 0 && t.price !== lastPrice) {
+            priceEl.className = 'price-display ' + (t.price > lastPrice ? 'price-up' : 'price-down');
+          }
+          lastPrice = t.price;
+
+          priceEl.innerText = typeof t.price === 'number' && !isNaN(t.price) ? formatCurrency(t.price) : '--.---,--';
+          
+          // 24h change
+          if (typeof t.change24h === 'number' && !isNaN(t.change24h)) {
+            const changeSign = t.change24h >= 0 ? '+' : '';
+            changeEl.innerText = `${changeSign}${t.change24h.toFixed(2)}%`;
+            changeEl.className = 'price-change ' + (t.change24h >= 0 ? 'positive' : 'negative');
+          } else {
+            changeEl.innerText = '0.00%';
+            changeEl.className = 'price-change positive';
+          }
+
+          highEl.innerText = typeof t.high24h === 'number' && !isNaN(t.high24h) ? formatCurrency(t.high24h) : '--.---';
+          lowEl.innerText = typeof t.low24h === 'number' && !isNaN(t.low24h) ? formatCurrency(t.low24h) : '--.---';
+          volumeEl.innerText = typeof t.volume24h === 'number' && !isNaN(t.volume24h) ? formatNumber(t.volume24h) : '--.---';
+        } catch (tickerErr) {
+          console.error("Lỗi cập nhật UI Ticker:", tickerErr);
         }
-        lastPrice = t.price;
-
-        priceEl.innerText = formatCurrency(t.price);
-        
-        // 24h change
-        const changeSign = t.change24h >= 0 ? '+' : '';
-        changeEl.innerText = `${changeSign}${t.change24h.toFixed(2)}%`;
-        changeEl.className = 'price-change ' + (t.change24h >= 0 ? 'positive' : 'negative');
-
-        highEl.innerText = formatCurrency(t.high24h);
-        lowEl.innerText = formatCurrency(t.low24h);
-        volumeEl.innerText = formatNumber(t.volume24h);
       }
 
       // 3. Nhận chỉ báo và nến mới
       if (data.indicators) {
-        const ind = data.indicators;
+        try {
+          const ind = data.indicators;
 
-        // Cập nhật RSI UI
-        if (ind.rsi !== null) {
-          const rsiVal = ind.rsi.toFixed(2);
-          rsiValEl.innerText = rsiVal;
-          rsiBarEl.style.width = `${ind.rsi}%`;
+          // Cập nhật RSI UI
+          if (ind.rsi !== null && ind.rsi !== undefined && !isNaN(ind.rsi)) {
+            const rsiVal = ind.rsi.toFixed(2);
+            rsiValEl.innerText = rsiVal;
+            rsiBarEl.style.width = `${Math.min(100, Math.max(0, ind.rsi))}%`;
 
-          if (ind.rsi >= 70) {
-            rsiStatusEl.innerText = 'QUÁ MUA (Overbought)';
-            rsiStatusEl.className = 'ind-status bearish';
-            rsiBarEl.style.background = 'var(--negative)';
-          } else if (ind.rsi <= 30) {
-            rsiStatusEl.innerText = 'QUÁ BÁN (Oversold)';
-            rsiStatusEl.className = 'ind-status bullish';
-            rsiBarEl.style.background = 'var(--positive)';
-          } else {
-            rsiStatusEl.innerText = 'Trung lập (Neutral)';
-            rsiStatusEl.className = 'ind-status neutral';
-            rsiBarEl.style.background = 'var(--neutral)';
+            if (ind.rsi >= 70) {
+              rsiStatusEl.innerText = 'QUÁ MUA (Overbought)';
+              rsiStatusEl.className = 'ind-status bearish';
+              rsiBarEl.style.background = 'var(--negative)';
+            } else if (ind.rsi <= 30) {
+              rsiStatusEl.innerText = 'QUÁ BÁN (Oversold)';
+              rsiStatusEl.className = 'ind-status bullish';
+              rsiBarEl.style.background = 'var(--positive)';
+            } else {
+              rsiStatusEl.innerText = 'Trung lập (Neutral)';
+              rsiStatusEl.className = 'ind-status neutral';
+              rsiBarEl.style.background = 'var(--neutral)';
+            }
           }
-        }
 
-        // Cập nhật EMA UI
-        if (ind.ema12 !== null && ind.ema26 !== null) {
-          ema12El.innerText = formatCurrency(ind.ema12);
-          ema26El.innerText = formatCurrency(ind.ema26);
+          // Cập nhật EMA UI
+          if (ind.ema12 !== null && ind.ema12 !== undefined && !isNaN(ind.ema12) &&
+              ind.ema26 !== null && ind.ema26 !== undefined && !isNaN(ind.ema26)) {
+            ema12El.innerText = formatCurrency(ind.ema12);
+            ema26El.innerText = formatCurrency(ind.ema26);
 
-          if (ind.ema12 > ind.ema26) {
-            emaCrossEl.innerText = 'Xu hướng tăng (Bullish)';
-            emaCrossEl.className = 'ind-status bullish';
-          } else {
-            emaCrossEl.innerText = 'Xu hướng giảm (Bearish)';
-            emaCrossEl.className = 'ind-status bearish';
+            if (ind.ema12 > ind.ema26) {
+              emaCrossEl.innerText = 'Xu hướng tăng (Bullish)';
+              emaCrossEl.className = 'ind-status bullish';
+            } else {
+              emaCrossEl.innerText = 'Xu hướng giảm (Bearish)';
+              emaCrossEl.className = 'ind-status bearish';
+            }
           }
-        }
 
-        // Cập nhật MACD UI
-        if (ind.macd !== null) {
-          macdValEl.innerText = ind.macd.MACD.toFixed(2);
-          macdSigEl.innerText = ind.macd.signal.toFixed(2);
-          macdHistEl.innerText = ind.macd.histogram.toFixed(2);
+          // Cập nhật MACD UI
+          if (ind.macd && typeof ind.macd === 'object' && 
+              ind.macd.MACD !== undefined && ind.macd.signal !== undefined && ind.macd.histogram !== undefined) {
+            macdValEl.innerText = ind.macd.MACD.toFixed(2);
+            macdSigEl.innerText = ind.macd.signal.toFixed(2);
+            macdHistEl.innerText = ind.macd.histogram.toFixed(2);
 
-          if (ind.macd.histogram > 0) {
-            macdStatusEl.innerText = 'Histogram Dương';
-            macdStatusEl.className = 'ind-status bullish';
-          } else {
-            macdStatusEl.innerText = 'Histogram Âm';
-            macdStatusEl.className = 'ind-status bearish';
+            if (ind.macd.histogram > 0) {
+              macdStatusEl.innerText = 'Histogram Dương';
+              macdStatusEl.className = 'ind-status bullish';
+            } else {
+              macdStatusEl.innerText = 'Histogram Âm';
+              macdStatusEl.className = 'ind-status bearish';
+            }
           }
-        }
 
-        // Cập nhật biểu đồ nếu có nến mới
-        if (data.lastCandle) {
-          updateChart(data.lastCandle, ind);
+          // Cập nhật biểu đồ nếu có nến mới
+          if (data.lastCandle) {
+            updateChart(data.lastCandle, ind);
+          }
+        } catch (indErr) {
+          console.error("Lỗi cập nhật UI Indicators:", indErr);
         }
       }
+
+    } catch (err) {
+      console.error('Lỗi phân tích dữ liệu WebSocket:', err);
+    }
+  };
 
     } catch (err) {
       console.error('Lỗi nhận dữ liệu WebSocket:', err);

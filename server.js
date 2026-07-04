@@ -102,7 +102,7 @@ function connectOKX() {
         if (channel === 'tickers') {
           currentTicker = {
             price: parseFloat(rawData.last),
-            change24h: ((parseFloat(rawData.last) - parseFloat(rawData.sopen)) / parseFloat(rawData.sopen) * 100),
+            change24h: ((parseFloat(rawData.last) - parseFloat(rawData.open24h)) / parseFloat(rawData.open24h) * 100),
             high24h: parseFloat(rawData.high24h),
             low24h: parseFloat(rawData.low24h),
             volume24h: parseFloat(rawData.vol24h)
