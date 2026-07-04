@@ -346,11 +346,6 @@ function connectWS() {
     }
   };
 
-    } catch (err) {
-      console.error('Lỗi nhận dữ liệu WebSocket:', err);
-    }
-  };
-
   ws.onclose = () => {
     connStatus.className = 'status-badge disconnected';
     statusText.innerText = 'Mất kết nối. Đang kết nối lại...';
