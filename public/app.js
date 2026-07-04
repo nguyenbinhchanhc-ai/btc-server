@@ -54,6 +54,10 @@ let currentFlowPeriod = '1d';
 let currentTakerPeriod = '5m';
 let currentLsPeriod = '5m';
 
+// Cơ chế HTTP Polling Fallback khi WebSocket mất kết nối
+let pollingInterval = null;
+let isPollingActive = false;
+
 function formatCurrency(num) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(num);
 }
@@ -63,7 +67,6 @@ function formatNumber(num) {
 }
 
 function formatBTC(num) {
-  // Hiển thị dạng K (Nghìn) nếu số lớn hơn 1000 để giống OKX
   if (num >= 1000) {
     return (num / 1000).toFixed(2) + ' N BTC';
   }
@@ -77,13 +80,15 @@ function formatTime(timestamp) {
 
 // Khởi tạo các biểu đồ chính
 function initCharts(historicalCandles, rubikData) {
+  // Nếu các biểu đồ đã được vẽ rồi thì không vẽ lại để tránh giật lag UI
+  if (priceChart && rsiChart && flowDoughnutChart) return;
+
   const ctxPrice = document.getElementById('priceChart').getContext('2d');
   const ctxRsi = document.getElementById('rsiChart').getContext('2d');
   const ctxFlow = document.getElementById('flowDoughnutChart').getContext('2d');
   const ctxTaker = document.getElementById('takerVolumeChart').getContext('2d');
   const ctxLs = document.getElementById('lsRatioChart').getContext('2d');
 
-  // 1. Biểu đồ nến & EMA
   const labels = historicalCandles.map(c => formatTime(c.time));
   const prices = historicalCandles.map(c => c.close);
   const ema12 = historicalCandles.map(c => c.ema12 !== undefined ? c.ema12 : null);
@@ -139,7 +144,6 @@ function initCharts(historicalCandles, rubikData) {
     }
   });
 
-  // 2. Biểu đồ RSI
   rsiChart = new Chart(ctxRsi, {
     type: 'line',
     data: {
@@ -193,7 +197,6 @@ function initCharts(historicalCandles, rubikData) {
     }
   });
 
-  // 3. Biểu đồ tròn Phân bổ Dòng tiền (Chuẩn OKX: Đỏ bên phải, Xanh bên trái)
   flowDoughnutChart = new Chart(ctxFlow, {
     type: 'doughnut',
     data: {
@@ -204,14 +207,14 @@ function initCharts(historicalCandles, rubikData) {
       datasets: [{
         data: [0, 0, 0, 0, 0, 0, 0, 0],
         backgroundColor: [
-          '#b3001e', // Ra - Siêu lớn (Đỏ đậm)
-          '#f6465d', // Ra - Lớn
-          '#ff7373', // Ra - Trung bình
-          '#ffb3b3', // Ra - Nhỏ
-          '#a3ffd6', // Vào - Nhỏ (Xanh rất nhạt)
-          '#39e6a0', // Vào - Trung bình
-          '#0ecb81', // Vào - Lớn
-          '#0b6623'  // Vào - Siêu lớn (Xanh đậm)
+          '#b3001e', 
+          '#f6465d', 
+          '#ff7373', 
+          '#ffb3b3', 
+          '#a3ffd6', 
+          '#39e6a0', 
+          '#0ecb81', 
+          '#0b6623'  
         ],
         borderWidth: 0,
         hoverOffset: 4
@@ -227,7 +230,6 @@ function initCharts(historicalCandles, rubikData) {
     }
   });
 
-  // 4. Biểu đồ cột đôi Mua/Bán Taker (Chuẩn OKX)
   const tvData = rubikData?.takerVolume?.[currentTakerPeriod] || [];
   const tvLabels = tvData.map(v => formatTime(v.time));
   const tvBuyData = tvData.map(v => v.buyVol);
@@ -269,7 +271,6 @@ function initCharts(historicalCandles, rubikData) {
     }
   });
 
-  // 5. Biểu đồ đường Tỷ lệ Long/Short Ký quỹ BTC (Trồi sụt trơn tru)
   const lsData = rubikData?.longShortRatio?.[currentLsPeriod] || [];
   const lsLabels = lsData.map(v => formatTime(v.time));
   const lsValues = lsData.map(v => v.ratio);
@@ -466,7 +467,6 @@ function updateRubikCharts(rubikData) {
       lsRatioChart.data.datasets[0].data = lsValues;
       lsRatioChart.update();
 
-      // Cập nhật badge ratio hiện tại ở tiêu đề
       if (lsValues.length > 0) {
         const currentRatio = lsValues[lsValues.length - 1];
         lsCurrentRatioEl.innerText = `L/S Ratio: ${currentRatio.toFixed(2)}`;
@@ -498,7 +498,6 @@ function updateOrderFlowUI(flows) {
     
     flowNetValEl.innerText = (isNetOutflow ? '' : '+') + formatNumber(netInflow) + ' BTC';
     
-    // Label hiển thị ròng "Dòng tiền ra ròng" / "Dòng tiền vào ròng" giống OKX
     const flowNetLabelEl = document.querySelector('.flow-net-label');
     if (isNetOutflow) {
       flowNetLabelEl.innerText = 'DÒNG TIỀN RA RÒNG';
@@ -511,7 +510,7 @@ function updateOrderFlowUI(flows) {
     flowInValEl.innerText = formatBTC(flow.totalBuy);
     flowOutValEl.innerText = formatBTC(flow.totalSell);
 
-    // Điền bảng
+    // Điền bảng số liệu
     flowInSlEl.innerText = formatNumber(flow.buy.superLarge);
     flowOutSlEl.innerText = formatNumber(flow.sell.superLarge);
     flowInLEl.innerText = formatNumber(flow.buy.large);
@@ -541,7 +540,11 @@ function updateOrderFlowUI(flows) {
 }
 
 // Gắn bộ lắng nghe click cho các period button
+let periodListenersSetup = false;
 function setupPeriodListeners() {
+  if (periodListenersSetup) return;
+  periodListenersSetup = true;
+
   // 1. Phân tích Dòng tiền periods
   document.querySelectorAll('#flow-periods .period-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -579,6 +582,57 @@ function setupPeriodListeners() {
   });
 }
 
+// Cập nhật toàn bộ giao diện từ một gói data (Dùng cho cả WS và HTTP Fallback)
+function updateAllData(data) {
+  if (!data) return;
+  
+  if (data.candles) {
+    try {
+      initCharts(data.candles, data.rubikData);
+      setupPeriodListeners();
+    } catch (chartErr) {
+      console.error("Lỗi khởi tạo biểu đồ:", chartErr);
+    }
+  }
+  
+  updateTickerUI(data.ticker);
+  updateIndicatorsUI(data.indicators);
+  updateOrderFlowUI(data.orderFlows);
+  updateRubikCharts(data.rubikData);
+  
+  // Cập nhật nến mới nhất cho biểu đồ giá/RSI
+  if (data.candles && data.candles.length > 0 && data.indicators) {
+    updateChart(data.candles[data.candles.length - 1], data.indicators);
+  }
+}
+
+// Kích hoạt HTTP Polling dự phòng
+function startPolling() {
+  if (isPollingActive) return;
+  isPollingActive = true;
+  console.log("Đã kích hoạt chế độ Polling dự phòng.");
+  
+  connStatus.className = 'status-badge disconnected';
+  statusText.innerText = 'Live (Dự phòng)';
+
+  pollingInterval = setInterval(async () => {
+    try {
+      const response = await fetch('/api/data');
+      const data = await response.json();
+      updateAllData(data);
+    } catch (err) {
+      console.error("Lỗi HTTP Polling:", err.message);
+    }
+  }, 2000);
+}
+
+function stopPolling() {
+  if (!isPollingActive) return;
+  isPollingActive = false;
+  clearInterval(pollingInterval);
+  console.log("Đã dừng chế độ Polling.");
+}
+
 // Kết nối WebSocket đến Backend server
 let ws;
 function connectWS() {
@@ -588,6 +642,7 @@ function connectWS() {
   ws = new WebSocket(url);
 
   ws.onopen = () => {
+    stopPolling();
     connStatus.className = 'status-badge connected';
     statusText.innerText = 'Đã kết nối Live';
   };
@@ -597,18 +652,7 @@ function connectWS() {
       const data = JSON.parse(event.data);
 
       if (data.type === 'init') {
-        if (data.candles) {
-          try {
-            initCharts(data.candles, data.rubikData);
-            setupPeriodListeners(); // Chỉ gắn sự kiện một lần sau khi vẽ chart
-          } catch (chartErr) {
-            console.error("Lỗi khởi tạo biểu đồ:", chartErr);
-          }
-        }
-        updateTickerUI(data.ticker);
-        updateIndicatorsUI(data.indicators);
-        updateOrderFlowUI(data.orderFlows);
-        updateRubikCharts(data.rubikData);
+        updateAllData(data);
       } 
       else if (data.type === 'ticker') {
         updateTickerUI(data.ticker);
@@ -629,9 +673,8 @@ function connectWS() {
   };
 
   ws.onclose = () => {
-    connStatus.className = 'status-badge disconnected';
-    statusText.innerText = 'Mất kết nối. Đang kết nối lại...';
-    setTimeout(connectWS, 3000);
+    startPolling();
+    setTimeout(connectWS, 5000);
   };
 
   ws.onerror = (err) => {
@@ -640,5 +683,5 @@ function connectWS() {
   };
 }
 
-// Chạy kết nối
+// Khởi chạy kết nối ban đầu
 connectWS();

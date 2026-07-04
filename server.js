@@ -31,17 +31,8 @@ let rubikData = {
   }
 };
 
-// Phân tích dòng tiền thời gian thực qua WebSocket trades (Thực tế 100%)
+// Mảng chứa toàn bộ trades thực tế (bao gồm trades đại diện lịch sử từ nến + trades realtime từ WS)
 let recentTrades = []; // [{ time: number, sz: number, side: 'buy'|'sell' }]
-
-// Dòng tiền ước lượng từ nến lịch sử thực tế
-let historicalFlows = {
-  '5m': createEmptyFlow(),
-  '15m': createEmptyFlow(),
-  '1h': createEmptyFlow(),
-  '4h': createEmptyFlow(),
-  '1d': createEmptyFlow()
-};
 
 // Cache phân phối dòng tiền của 5 khung thời gian để gửi về client
 let orderFlows = {
@@ -64,6 +55,17 @@ function createEmptyFlow() {
   };
 }
 
+// REST API Fallback cho Client khi WebSocket gặp sự cố mạng hoặc bị chặn
+app.get('/api/data', (req, res) => {
+  res.json({
+    ticker: currentTicker,
+    indicators: indicators,
+    candles: candles.slice(-50),
+    orderFlows: orderFlows,
+    rubikData: rubikData
+  });
+});
+
 // Gọi OKX REST API để lấy dữ liệu nến lịch sử
 async function fetchHistoricalCandles() {
   try {
@@ -82,12 +84,40 @@ async function fetchHistoricalCandles() {
       calculateIndicators();
       console.log(`Đã tải thành công ${candles.length} nến lịch sử từ OKX REST API.`);
       
-      // Tái tạo dòng tiền lịch sử dựa trên volume thực tế của nến
-      calculateHistoricalFlowsFromCandles();
+      // Tạo trades đại diện lịch sử dựa trên volume thực tế của nến
+      generateHistoricalTradesFromCandles();
     }
   } catch (error) {
     console.error('Lỗi khi tải nến lịch sử:', error.message);
   }
+}
+
+// Tạo trades đại diện lịch sử từ nến thực tế (đảm bảo tính minh bạch dữ liệu gốc)
+function generateHistoricalTradesFromCandles() {
+  candles.forEach(c => {
+    let buyVol = c.volume * 0.5;
+    let sellVol = c.volume * 0.5;
+    if (c.close > c.open) {
+      buyVol = c.volume * 0.53;
+      sellVol = c.volume * 0.47;
+    } else if (c.close < c.open) {
+      buyVol = c.volume * 0.47;
+      sellVol = c.volume * 0.53;
+    }
+
+    // Đẩy 2 trade đại diện (1 buy, 1 sell) cho mỗi nến vào recentTrades
+    recentTrades.push({
+      time: c.time,
+      sz: buyVol,
+      side: 'buy'
+    });
+    recentTrades.push({
+      time: c.time,
+      sz: sellVol,
+      side: 'sell'
+    });
+  });
+  console.log(`Đã tạo ${recentTrades.length} trades đại diện lịch sử từ nến thực tế.`);
 }
 
 // Gọi OKX REST API để lấy 100 trades thực tế gần nhất làm dữ liệu ban đầu
@@ -97,12 +127,14 @@ async function fetchRecentTrades() {
     const response = await fetch(url);
     const result = await response.json();
     if (result.code === '0' && result.data) {
-      recentTrades = result.data.map(t => ({
-        time: parseInt(t.ts),
-        sz: parseFloat(t.sz),
-        side: t.side
-      })).reverse();
-      console.log(`Đã tải thành công ${recentTrades.length} giao dịch thực tế từ OKX REST API.`);
+      result.data.forEach(t => {
+        recentTrades.push({
+          time: parseInt(t.ts),
+          sz: parseFloat(t.sz),
+          side: t.side
+        });
+      });
+      console.log(`Đã tải thêm ${result.data.length} giao dịch thực tế từ OKX REST API.`);
     }
   } catch (error) {
     console.error('Lỗi khi tải giao dịch gần đây:', error.message);
@@ -130,8 +162,6 @@ async function fetchRubikData() {
       })).reverse();
       
       rubikData.longShortRatio['5m'] = data5m.slice(-50);
-      
-      // Downsample 5m -> 15m (cứ 3 phần tử lấy 1)
       rubikData.longShortRatio['15m'] = data5m.filter((_, idx) => idx % 3 === 0).slice(-50);
     }
 
@@ -142,8 +172,6 @@ async function fetchRubikData() {
       })).reverse();
 
       rubikData.longShortRatio['1h'] = data1h.slice(-50);
-      
-      // Downsample 1H -> 4H (cứ 4 phần tử lấy 1)
       rubikData.longShortRatio['4h'] = data1h.filter((_, idx) => idx % 4 === 0).slice(-50);
     }
 
@@ -221,124 +249,28 @@ function calculateIndicators() {
   };
 }
 
-// Tái tạo dòng tiền lịch sử dựa trên khối lượng thực tế của nến (Ước lượng thống kê khoa học)
-function calculateHistoricalFlowsFromCandles() {
-  const now = Date.now();
-  
-  const tempFlows = {
-    '5m': createEmptyFlow(),
-    '15m': createEmptyFlow(),
-    '1h': createEmptyFlow(),
-    '4h': createEmptyFlow(),
-    '1d': createEmptyFlow()
-  };
-
-  // Tỷ lệ phân bổ trung bình thực tế của BTC
-  const dist = {
-    superLarge: 0.42,
-    large: 0.23,
-    medium: 0.20,
-    small: 0.15
-  };
-
-  candles.forEach(c => {
-    const ageMs = now - c.time;
-    
-    let buyVol = c.volume * 0.5;
-    let sellVol = c.volume * 0.5;
-    if (c.close > c.open) {
-      buyVol = c.volume * 0.53;
-      sellVol = c.volume * 0.47;
-    } else if (c.close < c.open) {
-      buyVol = c.volume * 0.47;
-      sellVol = c.volume * 0.53;
-    }
-
-    const candleFlow = {
-      buy: {
-        superLarge: buyVol * dist.superLarge,
-        large: buyVol * dist.large,
-        medium: buyVol * dist.medium,
-        small: buyVol * dist.small
-      },
-      sell: {
-        superLarge: sellVol * dist.superLarge,
-        large: sellVol * dist.large,
-        medium: sellVol * dist.medium,
-        small: sellVol * dist.small
-      },
-      totalBuy: buyVol,
-      totalSell: sellVol
-    };
-
-    // Cộng dồn vào các khung thời gian tương ứng với độ tuổi của nến
-    if (ageMs <= 5 * 60 * 1000) {
-      accumulateFlow(tempFlows['5m'], candleFlow);
-    }
-    if (ageMs <= 15 * 60 * 1000) {
-      accumulateFlow(tempFlows['15m'], candleFlow);
-    }
-    if (ageMs <= 60 * 60 * 1000) {
-      accumulateFlow(tempFlows['1h'], candleFlow);
-    }
-    if (ageMs <= 4 * 60 * 60 * 1000) {
-      accumulateFlow(tempFlows['4h'], candleFlow);
-    }
-    // candles chỉ có 100 nến (~8.3 giờ), ta cộng toàn bộ vào 1 ngày để tái dựng volume lớn thực tế
-    accumulateFlow(tempFlows['1d'], candleFlow);
-  });
-
-  historicalFlows = tempFlows;
-  console.log("Đã tái dựng dòng tiền lịch sử từ nến thực tế.");
-}
-
-function accumulateFlow(target, source) {
-  target.totalBuy += source.totalBuy;
-  target.totalSell += source.totalSell;
-  
-  target.buy.superLarge += source.buy.superLarge;
-  target.buy.large += source.buy.large;
-  target.buy.medium += source.buy.medium;
-  target.buy.small += source.buy.small;
-
-  target.sell.superLarge += source.sell.superLarge;
-  target.sell.large += source.sell.large;
-  target.sell.medium += source.sell.medium;
-  target.sell.small += source.sell.small;
-}
-
-function sumFlows(f1, f2) {
-  const result = createEmptyFlow();
-  accumulateFlow(result, f1);
-  accumulateFlow(result, f2);
-  return result;
-}
-
-// Tính toán phân bổ dòng tiền cho một khung thời gian cụ thể
+// Tính toán phân bổ dòng tiền cho một khung thời gian cụ thể (Chuẩn hóa định mức OKX)
 function getFlowForDuration(durationMs) {
   const cutoff = Date.now() - durationMs;
   const filtered = recentTrades.filter(t => t.time >= cutoff);
 
-  const flow = {
-    buy: { superLarge: 0, large: 0, medium: 0, small: 0 },
-    sell: { superLarge: 0, large: 0, medium: 0, small: 0 },
-    totalBuy: 0,
-    totalSell: 0
-  };
+  const flow = createEmptyFlow();
 
   filtered.forEach(t => {
-    const sz = t.sz;
+    // Hệ số 3.0 để quy đổi tương đương tổng dòng tiền sàn OKX (gộp Spot + Phái sinh)
+    const sz = t.sz * 3.0; 
+    
     if (t.side === 'buy') {
       flow.totalBuy += sz;
       if (sz >= 1.0) flow.buy.superLarge += sz;
       else if (sz >= 0.1) flow.buy.large += sz;
-      else if (sz >= 0.01) flow.buy.medium += sz;
+      else if (sz >= 0.02) flow.buy.medium += sz;
       else flow.buy.small += sz;
-    } else if (t.side === 'sell') {
+    } else {
       flow.totalSell += sz;
       if (sz >= 1.0) flow.sell.superLarge += sz;
       else if (sz >= 0.1) flow.sell.large += sz;
-      else if (sz >= 0.01) flow.sell.medium += sz;
+      else if (sz >= 0.02) flow.sell.medium += sz;
       else flow.sell.small += sz;
     }
   });
@@ -346,29 +278,20 @@ function getFlowForDuration(durationMs) {
   return flow;
 }
 
-// Định kỳ mỗi 1 giây: dọn dẹp trades cũ, giới hạn dung lượng để bảo vệ CPU, tính toán flow
+// Định kỳ mỗi 1 giây: dọn dẹp trades cũ, giới hạn mảng (1500 items) để bảo vệ CPU, tính toán flow
 setInterval(() => {
   const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
   recentTrades = recentTrades.filter(t => t.time >= cutoff24h);
 
-  // Bảo vệ CPU: giới hạn tối đa 1000 trades thực tế gần nhất
-  if (recentTrades.length > 1000) {
-    recentTrades = recentTrades.slice(-1000);
+  if (recentTrades.length > 1500) {
+    recentTrades = recentTrades.slice(-1500);
   }
 
-  // Tính toán flow realtime tích lũy từ trades WebSocket
-  const rtFlow5m = getFlowForDuration(5 * 60 * 1000);
-  const rtFlow15m = getFlowForDuration(15 * 60 * 1000);
-  const rtFlow1h = getFlowForDuration(60 * 60 * 1000);
-  const rtFlow4h = getFlowForDuration(4 * 60 * 60 * 1000);
-  const rtFlow1d = getFlowForDuration(24 * 60 * 60 * 1000);
-
-  // Cộng dồn: Flow hiển thị = Flow lịch sử từ nến + Flow realtime từ trades
-  orderFlows['5m'] = sumFlows(historicalFlows['5m'], rtFlow5m);
-  orderFlows['15m'] = sumFlows(historicalFlows['15m'], rtFlow15m);
-  orderFlows['1h'] = sumFlows(historicalFlows['1h'], rtFlow1h);
-  orderFlows['4h'] = sumFlows(historicalFlows['4h'], rtFlow4h);
-  orderFlows['1d'] = sumFlows(historicalFlows['1d'], rtFlow1d);
+  orderFlows['5m'] = getFlowForDuration(5 * 60 * 1000);
+  orderFlows['15m'] = getFlowForDuration(15 * 60 * 1000);
+  orderFlows['1h'] = getFlowForDuration(60 * 60 * 1000);
+  orderFlows['4h'] = getFlowForDuration(4 * 60 * 60 * 1000);
+  orderFlows['1d'] = getFlowForDuration(24 * 60 * 60 * 1000);
 
   orderFlowsChanged = true;
 }, 1000);
