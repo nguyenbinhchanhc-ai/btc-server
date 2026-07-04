@@ -377,6 +377,171 @@ body {
   position: relative;
 }
 
+/* NEW: Order Flow Card Specifics */
+.order-flow-card {
+  grid-column: span 6;
+}
+
+.order-flow-content {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flow-chart-wrapper {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  flex-shrink: 0;
+}
+
+.flow-net-display {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  pointer-events: none;
+}
+
+.flow-net-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+
+.flow-net-val {
+  font-size: 1.05rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.flow-stats-wrapper {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.flow-total-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.flow-total-item {
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.15);
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.flow-total-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.flow-total-val {
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.flow-details-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.flow-details-table th, .flow-details-table td {
+  padding: 8px 6px;
+  text-align: right;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.flow-details-table th:first-child, .flow-details-table td:first-child {
+  text-align: left;
+}
+
+.flow-details-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+/* Color definitions */
+.text-green {
+  color: var(--positive) !important;
+}
+
+.text-red {
+  color: var(--negative) !important;
+}
+
+.neutral {
+  color: var(--neutral) !important;
+}
+
+/* Legend Dots */
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.dot.super-large { background-color: #ff5e00; }
+.dot.large { background-color: #ff9f43; }
+.dot.medium { background-color: #54a0ff; }
+.dot.small { background-color: #5f27cd; }
+
+/* NEW: Taker Net Volume & Sentiment */
+.taker-volume-container {
+  grid-column: span 6;
+}
+
+.sentiment-ratio-container {
+  grid-column: span 12;
+}
+
+.sentiment-title-area {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.sentiment-badge {
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 8px;
+}
+
+.sentiment-badge.bullish {
+  background: rgba(14, 203, 129, 0.15);
+  color: var(--positive);
+  border: 1px solid rgba(14, 203, 129, 0.2);
+}
+
+.sentiment-badge.bearish {
+  background: rgba(246, 70, 93, 0.15);
+  color: var(--negative);
+  border: 1px solid rgba(246, 70, 93, 0.2);
+}
+
+.sentiment-badge.neutral {
+  background: rgba(233, 178, 0, 0.15);
+  color: var(--neutral);
+  border: 1px solid rgba(233, 178, 0, 0.2);
+}
+
 /* Footer style */
 .app-footer {
   text-align: center;
@@ -419,8 +584,13 @@ body {
 
 /* Responsive */
 @media (max-width: 992px) {
-  .price-card, .indicators-card {
+  .price-card, .indicators-card, .order-flow-card, .taker-volume-container {
     grid-column: span 12;
+  }
+  .order-flow-content {
+    flex-direction: column;
+    gap: 20px;
+    align-items: center;
   }
 }
 

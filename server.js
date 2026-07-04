@@ -10,10 +10,25 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static('public'));
 
-// Cache nến lịch sử
-let candles = []; // Mỗi nến: { time: number, open: number, high: number, low: number, close: number, volume: number }
+// Cache dữ liệu nến & chỉ báo
+let candles = []; // Mỗi nến: { time: number, open: number, high: number, low: number, close: number, volume: number, rsi, ema12, ema26, macd }
 let currentTicker = { price: 0, change24h: 0, high24h: 0, low24h: 0, volume24h: 0 };
 let indicators = { rsi: null, ema12: null, ema26: null, macd: null };
+
+// Thống kê Rubik API từ OKX
+let rubikData = {
+  longShortRatio: [], // [{ time: number, ratio: number }]
+  takerVolume: []     // [{ time: number, buyVol: number, sellVol: number, netVol: number }]
+};
+
+// Phân tích dòng tiền thời gian thực qua WebSocket trades
+let recentTrades = []; // [{ time: number, sz: number, side: 'buy'|'sell' }]
+let orderFlow24h = {
+  buy: { superLarge: 0, large: 0, medium: 0, small: 0 },
+  sell: { superLarge: 0, large: 0, medium: 0, small: 0 },
+  totalBuy: 0,
+  totalSell: 0
+};
 
 // Gọi OKX REST API để lấy dữ liệu nến lịch sử
 async function fetchHistoricalCandles() {
@@ -22,7 +37,6 @@ async function fetchHistoricalCandles() {
     const response = await fetch(url);
     const result = await response.json();
     if (result.code === '0' && result.data) {
-      // Dữ liệu OKX trả về từ mới nhất -> cũ nhất, cần đảo ngược lại
       candles = result.data.map(c => ({
         time: parseInt(c[0]),
         open: parseFloat(c[1]),
@@ -36,6 +50,44 @@ async function fetchHistoricalCandles() {
     }
   } catch (error) {
     console.error('Lỗi khi tải nến lịch sử:', error.message);
+  }
+}
+
+// Gọi OKX Rubik API để lấy Long/Short Ratio và Taker Volume
+async function fetchRubikData() {
+  try {
+    // 1. Lấy Long/Short Ratio (Contracts)
+    const lsUrl = 'https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=BTC&period=5m';
+    const lsRes = await fetch(lsUrl);
+    const lsResult = await lsRes.json();
+    if (lsResult.code === '0' && lsResult.data) {
+      rubikData.longShortRatio = lsResult.data.slice(0, 50).map(d => ({
+        time: parseInt(d[0]),
+        ratio: parseFloat(d[1])
+      })).reverse();
+    }
+
+    // 2. Lấy Taker Volume (Spot)
+    const tvUrl = 'https://www.okx.com/api/v5/rubik/stat/taker-volume?ccy=BTC&period=5m&instType=SPOT';
+    const tvRes = await fetch(tvUrl);
+    const tvResult = await tvRes.json();
+    if (tvResult.code === '0' && tvResult.data) {
+      rubikData.takerVolume = tvResult.data.slice(0, 50).map(d => {
+        const buyVol = parseFloat(d[1]);
+        const sellVol = parseFloat(d[2]);
+        return {
+          time: parseInt(d[0]),
+          buyVol: buyVol,
+          sellVol: sellVol,
+          netVol: buyVol - sellVol
+        };
+      }).reverse();
+    }
+
+    console.log('Đã tải và cập nhật thành công dữ liệu thống kê Rubik từ OKX.');
+    broadcastData();
+  } catch (error) {
+    console.error('Lỗi khi tải dữ liệu Rubik:', error.message);
   }
 }
 
@@ -81,21 +133,62 @@ function calculateIndicators() {
   };
 }
 
+// Tính toán Phân phối Dòng tiền 24h
+let flowUpdatePending = false;
+function calculateOrderFlow() {
+  if (flowUpdatePending) return;
+  flowUpdatePending = true;
+
+  // Thực hiện tính toán sau một khoảng trễ nhỏ để gom nhóm các giao dịch (thay vì tính liên tục gây block event loop)
+  setTimeout(() => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    recentTrades = recentTrades.filter(t => t.time >= cutoff);
+
+    const flow = {
+      buy: { superLarge: 0, large: 0, medium: 0, small: 0 },
+      sell: { superLarge: 0, large: 0, medium: 0, small: 0 },
+      totalBuy: 0,
+      totalSell: 0
+    };
+
+    recentTrades.forEach(t => {
+      const sz = t.sz;
+      if (t.side === 'buy') {
+        flow.totalBuy += sz;
+        if (sz >= 1.0) flow.buy.superLarge += sz;
+        else if (sz >= 0.1) flow.buy.large += sz;
+        else if (sz >= 0.01) flow.buy.medium += sz;
+        else flow.buy.small += sz;
+      } else if (t.side === 'sell') {
+        flow.totalSell += sz;
+        if (sz >= 1.0) flow.sell.superLarge += sz;
+        else if (sz >= 0.1) flow.sell.large += sz;
+        else if (sz >= 0.01) flow.sell.medium += sz;
+        else flow.sell.small += sz;
+      }
+    });
+
+    orderFlow24h = flow;
+    flowUpdatePending = false;
+    broadcastData();
+  }, 500);
+}
+
 // Kết nối WebSocket OKX
 let okxWs;
 function connectOKX() {
   console.log('Đang kết nối đến OKX WebSocket...');
-  // OKX Public WS
   okxWs = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
 
   okxWs.on('open', () => {
     console.log('Đã kết nối thành công đến OKX WebSocket!');
-    // Subscribe tickers và candle5m
+    // Subscribe tickers, candle5m và trades
     const subscribeMsg = {
       op: 'subscribe',
       args: [
         { channel: 'tickers', instId: 'BTC-USDT' },
-        { channel: 'candle5m', instId: 'BTC-USDT' }
+        { channel: 'candle5m', instId: 'BTC-USDT' },
+        { channel: 'trades', instId: 'BTC-USDT' }
       ]
     };
     okxWs.send(JSON.stringify(subscribeMsg));
@@ -111,9 +204,9 @@ function connectOKX() {
 
       if (msg.arg && msg.data && msg.data.length > 0) {
         const channel = msg.arg.channel;
-        const rawData = msg.data[0];
 
         if (channel === 'tickers') {
+          const rawData = msg.data[0];
           currentTicker = {
             price: parseFloat(rawData.last),
             change24h: ((parseFloat(rawData.last) - parseFloat(rawData.open24h)) / parseFloat(rawData.open24h) * 100),
@@ -123,7 +216,7 @@ function connectOKX() {
           };
           broadcastData();
         } else if (channel === 'candle5m') {
-          // Định dạng nến: [time, open, high, low, close, vol, volCcy, volCcyQuote, confirm]
+          const rawData = msg.data[0];
           const candleTime = parseInt(rawData[0]);
           const newCandle = {
             time: candleTime,
@@ -133,14 +226,11 @@ function connectOKX() {
             close: parseFloat(rawData[4]),
             volume: parseFloat(rawData[5])
           };
-          const confirm = rawData[8] === '1'; // '1' là nến đã đóng, '0' là nến đang chạy
 
           const lastCandleIdx = candles.findIndex(c => c.time === candleTime);
           if (lastCandleIdx !== -1) {
-            // Cập nhật nến hiện tại đang chạy
             candles[lastCandleIdx] = newCandle;
           } else {
-            // Nếu là nến mới hoàn toàn
             if (candles.length > 0 && candleTime > candles[candles.length - 1].time) {
               candles.push(newCandle);
               if (candles.length > 150) {
@@ -151,6 +241,16 @@ function connectOKX() {
 
           calculateIndicators();
           broadcastData();
+        } else if (channel === 'trades') {
+          // Nhận các giao dịch thời gian thực
+          msg.data.forEach(t => {
+            recentTrades.push({
+              time: parseInt(t.ts),
+              sz: parseFloat(t.sz),
+              side: t.side // 'buy' hoặc 'sell'
+            });
+          });
+          calculateOrderFlow();
         }
       }
     } catch (err) {
@@ -174,7 +274,9 @@ function broadcastData() {
   const payload = JSON.stringify({
     ticker: currentTicker,
     indicators: indicators,
-    lastCandle: candles[candles.length - 1] || null
+    lastCandle: candles[candles.length - 1] || null,
+    orderFlow24h: orderFlow24h,
+    rubikData: rubikData
   });
 
   wss.clients.forEach(client => {
@@ -187,11 +289,12 @@ function broadcastData() {
 // Xử lý kết nối client nội bộ
 wss.on('connection', (ws) => {
   console.log('Một Client mới đã kết nối qua WebSocket.');
-  // Gửi trạng thái hiện tại ngay khi client kết nối
   ws.send(JSON.stringify({
     ticker: currentTicker,
     indicators: indicators,
-    candles: candles.slice(-50) // Gửi 50 nến gần nhất để vẽ biểu đồ ban đầu
+    candles: candles.slice(-50),
+    orderFlow24h: orderFlow24h,
+    rubikData: rubikData
   }));
 
   ws.on('close', () => {
@@ -202,10 +305,13 @@ wss.on('connection', (ws) => {
 // Khởi chạy hệ thống
 async function init() {
   await fetchHistoricalCandles();
+  await fetchRubikData();
   connectOKX();
   
-  // Tránh ping/pong timeout trên Render (Render Free Web Services sẽ sleep nếu không có HTTP request, 
-  // nhưng ở đây có WebSocket hoạt động. Đồng thời ta tạo ping định kỳ để giữ kết nối client)
+  // Định kỳ tải dữ liệu Rubik Thống kê (5 phút một lần)
+  setInterval(fetchRubikData, 5 * 60 * 1000);
+
+  // Tránh ping/pong timeout trên Render
   setInterval(() => {
     wss.clients.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
