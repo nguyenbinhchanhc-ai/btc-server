@@ -63,9 +63,9 @@ function initCharts(historicalCandles) {
   const chartData = {
     labels: labels,
     prices: prices,
-    ema12: new Array(labels.length).fill(null),
-    ema26: new Array(labels.length).fill(null),
-    rsi: new Array(labels.length).fill(null)
+    ema12: historicalCandles.map(c => c.ema12 !== undefined ? c.ema12 : null),
+    ema26: historicalCandles.map(c => c.ema26 !== undefined ? c.ema26 : null),
+    rsi: historicalCandles.map(c => c.rsi !== undefined ? c.rsi : null)
   };
 
   // Cấu hình Price + EMA Chart
@@ -133,6 +133,24 @@ function initCharts(historicalCandles) {
           tension: 0.2,
           borderWidth: 2,
           pointRadius: 0
+        },
+        {
+          label: 'Overbought (70)',
+          data: new Array(chartData.labels.length).fill(70),
+          borderColor: 'rgba(246, 70, 93, 0.25)',
+          borderDash: [5, 5],
+          fill: false,
+          pointRadius: 0,
+          borderWidth: 1.5
+        },
+        {
+          label: 'Oversold (30)',
+          data: new Array(chartData.labels.length).fill(30),
+          borderColor: 'rgba(14, 203, 129, 0.25)',
+          borderDash: [5, 5],
+          fill: false,
+          pointRadius: 0,
+          borderWidth: 1.5
         }
       ]
     },
@@ -180,6 +198,10 @@ function updateChart(lastCandle, indicators) {
     ema12.push(indicators.ema12);
     ema26.push(indicators.ema26);
     rsi.push(indicators.rsi);
+    
+    // Đồng bộ đường ranh giới RSI tĩnh
+    if (rsiChart.data.datasets[1]) rsiChart.data.datasets[1].data.push(70);
+    if (rsiChart.data.datasets[2]) rsiChart.data.datasets[2].data.push(30);
 
     if (labels.length > MAX_CHART_POINTS) {
       labels.shift();
@@ -187,6 +209,8 @@ function updateChart(lastCandle, indicators) {
       ema12.shift();
       ema26.shift();
       rsi.shift();
+      if (rsiChart.data.datasets[1]) rsiChart.data.datasets[1].data.shift();
+      if (rsiChart.data.datasets[2]) rsiChart.data.datasets[2].data.shift();
     }
   }
 

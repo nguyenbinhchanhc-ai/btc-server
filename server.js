@@ -45,17 +45,10 @@ function calculateIndicators() {
 
   const closes = candles.map(c => c.close);
 
-  // 1. Tính RSI 14
+  // 1. Tính toán mảng các chỉ báo
   const rsiValues = RSI.calculate({ values: closes, period: 14 });
-  indicators.rsi = rsiValues[rsiValues.length - 1] || null;
-
-  // 2. Tính EMA 12 và 26
   const ema12Values = EMA.calculate({ values: closes, period: 12 });
   const ema26Values = EMA.calculate({ values: closes, period: 26 });
-  indicators.ema12 = ema12Values[ema12Values.length - 1] || null;
-  indicators.ema26 = ema26Values[ema26Values.length - 1] || null;
-
-  // 3. Tính MACD (12, 26, 9)
   const macdValues = MACD.calculate({
     values: closes,
     fastPeriod: 12,
@@ -64,7 +57,28 @@ function calculateIndicators() {
     SimpleMAOscillator: false,
     SimpleMASignal: false
   });
-  indicators.macd = macdValues[macdValues.length - 1] || null;
+
+  // 2. Map chỉ số vào từng nến
+  const rsiOffset = candles.length - rsiValues.length;
+  const ema12Offset = candles.length - ema12Values.length;
+  const ema26Offset = candles.length - ema26Values.length;
+  const macdOffset = candles.length - macdValues.length;
+
+  for (let i = 0; i < candles.length; i++) {
+    candles[i].rsi = i >= rsiOffset ? rsiValues[i - rsiOffset] : null;
+    candles[i].ema12 = i >= ema12Offset ? ema12Values[i - ema12Offset] : null;
+    candles[i].ema26 = i >= ema26Offset ? ema26Values[i - ema26Offset] : null;
+    candles[i].macd = i >= macdOffset ? macdValues[i - macdOffset] : null;
+  }
+
+  // 3. Cập nhật biến indicators toàn cục với dữ liệu của nến mới nhất
+  const lastCandle = candles[candles.length - 1];
+  indicators = {
+    rsi: lastCandle.rsi,
+    ema12: lastCandle.ema12,
+    ema26: lastCandle.ema26,
+    macd: lastCandle.macd
+  };
 }
 
 // Kết nối WebSocket OKX
