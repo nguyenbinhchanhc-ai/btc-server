@@ -17,18 +17,22 @@ let indicators = { rsi: null, ema12: null, ema26: null, macd: null };
 
 // Thống kê Rubik API từ OKX
 let rubikData = {
-  longShortRatio: [], // [{ time: number, ratio: number }]
-  takerVolume: []     // [{ time: number, buyVol: number, sellVol: number, netVol: number }]
+  longShortRatio: [], 
+  takerVolume: []     
 };
 
 // Phân tích dòng tiền thời gian thực qua WebSocket trades
-let recentTrades = []; // [{ time: number, sz: number, side: 'buy'|'sell' }]
+let recentTrades = []; 
 let orderFlow24h = {
   buy: { superLarge: 0, large: 0, medium: 0, small: 0 },
   sell: { superLarge: 0, large: 0, medium: 0, small: 0 },
   totalBuy: 0,
   totalSell: 0
 };
+
+// Trạng thái thay đổi để throttle broadcast
+let tickerChanged = false;
+let orderFlowChanged = false;
 
 // Gọi OKX REST API để lấy dữ liệu nến lịch sử
 async function fetchHistoricalCandles() {
@@ -85,7 +89,7 @@ async function fetchRubikData() {
     }
 
     console.log('Đã tải và cập nhật thành công dữ liệu thống kê Rubik từ OKX.');
-    broadcastData();
+    broadcast({ type: 'rubik', rubikData: rubikData });
   } catch (error) {
     console.error('Lỗi khi tải dữ liệu Rubik:', error.message);
   }
@@ -97,7 +101,6 @@ function calculateIndicators() {
 
   const closes = candles.map(c => c.close);
 
-  // 1. Tính toán mảng các chỉ báo
   const rsiValues = RSI.calculate({ values: closes, period: 14 });
   const ema12Values = EMA.calculate({ values: closes, period: 12 });
   const ema26Values = EMA.calculate({ values: closes, period: 26 });
@@ -110,7 +113,6 @@ function calculateIndicators() {
     SimpleMASignal: false
   });
 
-  // 2. Map chỉ số vào từng nến
   const rsiOffset = candles.length - rsiValues.length;
   const ema12Offset = candles.length - ema12Values.length;
   const ema26Offset = candles.length - ema26Values.length;
@@ -123,7 +125,6 @@ function calculateIndicators() {
     candles[i].macd = i >= macdOffset ? macdValues[i - macdOffset] : null;
   }
 
-  // 3. Cập nhật biến indicators toàn cục với dữ liệu của nến mới nhất
   const lastCandle = candles[candles.length - 1];
   indicators = {
     rsi: lastCandle.rsi,
@@ -139,7 +140,6 @@ function calculateOrderFlow() {
   if (flowUpdatePending) return;
   flowUpdatePending = true;
 
-  // Thực hiện tính toán sau một khoảng trễ nhỏ để gom nhóm các giao dịch (thay vì tính liên tục gây block event loop)
   setTimeout(() => {
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     recentTrades = recentTrades.filter(t => t.time >= cutoff);
@@ -169,9 +169,9 @@ function calculateOrderFlow() {
     });
 
     orderFlow24h = flow;
+    orderFlowChanged = true;
     flowUpdatePending = false;
-    broadcastData();
-  }, 500);
+  }, 1000); // Tăng thời gian gom nhóm lên 1 giây để tối ưu
 }
 
 // Kết nối WebSocket OKX
@@ -182,7 +182,6 @@ function connectOKX() {
 
   okxWs.on('open', () => {
     console.log('Đã kết nối thành công đến OKX WebSocket!');
-    // Subscribe tickers, candle5m và trades
     const subscribeMsg = {
       op: 'subscribe',
       args: [
@@ -214,7 +213,7 @@ function connectOKX() {
             low24h: parseFloat(rawData.low24h),
             volume24h: parseFloat(rawData.vol24h)
           };
-          broadcastData();
+          tickerChanged = true;
         } else if (channel === 'candle5m') {
           const rawData = msg.data[0];
           const candleTime = parseInt(rawData[0]);
@@ -240,14 +239,19 @@ function connectOKX() {
           }
 
           calculateIndicators();
-          broadcastData();
+          
+          // Gửi trực tiếp cập nhật nến (kênh này tần suất thấp 5m/lần hoặc vài giây 1 lần nến đang chạy)
+          broadcast({
+            type: 'candle',
+            lastCandle: candles[candles.length - 1] || null,
+            indicators: indicators
+          });
         } else if (channel === 'trades') {
-          // Nhận các giao dịch thời gian thực
           msg.data.forEach(t => {
             recentTrades.push({
               time: parseInt(t.ts),
               sz: parseFloat(t.sz),
-              side: t.side // 'buy' hoặc 'sell'
+              side: t.side
             });
           });
           calculateOrderFlow();
@@ -269,16 +273,9 @@ function connectOKX() {
   });
 }
 
-// Gửi dữ liệu cập nhật cho các Client đang kết nối
-function broadcastData() {
-  const payload = JSON.stringify({
-    ticker: currentTicker,
-    indicators: indicators,
-    lastCandle: candles[candles.length - 1] || null,
-    orderFlow24h: orderFlow24h,
-    rubikData: rubikData
-  });
-
+// Hàm gửi tin nhắn qua websocket
+function broadcast(dataObj) {
+  const payload = JSON.stringify(dataObj);
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(payload);
@@ -286,14 +283,29 @@ function broadcastData() {
   });
 }
 
+// Quét và gửi dữ liệu định kỳ mỗi 1 giây để tránh làm ngập lụt trình duyệt client (Throttle)
+setInterval(() => {
+  if (tickerChanged) {
+    broadcast({ type: 'ticker', ticker: currentTicker });
+    tickerChanged = false;
+  }
+  if (orderFlowChanged) {
+    broadcast({ type: 'orderFlow', orderFlow: orderFlow24h });
+    orderFlowChanged = false;
+  }
+}, 1000);
+
 // Xử lý kết nối client nội bộ
 wss.on('connection', (ws) => {
   console.log('Một Client mới đã kết nối qua WebSocket.');
+  
+  // Gửi gói khởi tạo ban đầu chứa toàn bộ dữ liệu lịch sử
   ws.send(JSON.stringify({
+    type: 'init',
     ticker: currentTicker,
     indicators: indicators,
     candles: candles.slice(-50),
-    orderFlow24h: orderFlow24h,
+    orderFlow: orderFlow24h,
     rubikData: rubikData
   }));
 
