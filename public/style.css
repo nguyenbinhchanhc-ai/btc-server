@@ -1,0 +1,439 @@
+:root {
+  --bg-color: #0b0e14;
+  --panel-bg: rgba(20, 26, 40, 0.6);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --primary-color: #f7931a; /* BTC Orange */
+  --text-main: #f0f3f8;
+  --text-muted: #848e9c;
+  --positive: #0ecb81;
+  --negative: #f6465d;
+  --neutral: #e9b200;
+  --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Outfit', sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+  line-height: 1.5;
+}
+
+/* Background gradient blobs */
+.glass-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  background: 
+    radial-gradient(circle at 10% 20%, rgba(247, 147, 26, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(14, 203, 129, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 50% 50%, rgba(246, 70, 93, 0.03) 0%, transparent 50%);
+  background-attachment: fixed;
+}
+
+.app-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-height: 100vh;
+}
+
+/* Header styling */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+}
+
+.logo-area {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.btc-icon {
+  background: rgba(247, 147, 26, 0.15);
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(247, 147, 26, 0.3);
+  animation: rotateGently 10s linear infinite;
+}
+
+.icon-orange {
+  color: var(--primary-color);
+  width: 28px;
+  height: 28px;
+}
+
+.logo-text h1 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  background: linear-gradient(135deg, #ffffff 0%, var(--primary-color) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.logo-text span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Connection status badge */
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+}
+
+.status-badge.connected {
+  background: rgba(14, 203, 129, 0.1);
+  color: var(--positive);
+  border-color: rgba(14, 203, 129, 0.2);
+}
+
+.status-badge.disconnected {
+  background: rgba(246, 70, 93, 0.1);
+  color: var(--negative);
+  border-color: rgba(246, 70, 93, 0.2);
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+.connected .pulse-dot {
+  animation: pulseGreen 1.5s infinite;
+}
+
+.disconnected .pulse-dot {
+  animation: pulseRed 1.5s infinite;
+}
+
+/* Dashboard grid */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 20px;
+}
+
+/* Card layout */
+.card {
+  background: var(--panel-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: var(--card-shadow);
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 10px;
+}
+
+.card-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+/* Live indicator */
+.live-tag {
+  background: rgba(14, 203, 129, 0.15);
+  color: var(--positive);
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(14, 203, 129, 0.2);
+}
+
+/* Price Card Spec */
+.price-card {
+  grid-column: span 6;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.price-display-wrapper {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.price-display {
+  font-size: 2.8rem;
+  font-weight: 800;
+  letter-spacing: -1px;
+  transition: color 0.15s ease;
+}
+
+.price-display.price-up {
+  color: var(--positive);
+  animation: flashGreen 0.4s ease-out;
+}
+
+.price-display.price-down {
+  color: var(--negative);
+  animation: flashRed 0.4s ease-out;
+}
+
+.price-change {
+  font-size: 1.2rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.price-change.positive {
+  background: rgba(14, 203, 129, 0.1);
+  color: var(--positive);
+}
+
+.price-change.negative {
+  background: rgba(246, 70, 93, 0.1);
+  color: var(--negative);
+}
+
+.price-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* Technical Indicators Card Spec */
+.indicators-card {
+  grid-column: span 6;
+}
+
+.indicators-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.indicator-item {
+  background: rgba(0, 0, 0, 0.15);
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.indicator-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.ind-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.ind-status {
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.ind-status.bullish {
+  background: rgba(14, 203, 129, 0.15);
+  color: var(--positive);
+}
+
+.ind-status.bearish {
+  background: rgba(246, 70, 93, 0.15);
+  color: var(--negative);
+}
+
+.ind-status.neutral {
+  background: rgba(233, 178, 0, 0.15);
+  color: var(--neutral);
+}
+
+.ind-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.progress-bar-container {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-color), var(--positive));
+  border-radius: 3px;
+  transition: width 0.5s ease-out, background 0.3s ease;
+}
+
+.ema-values, .macd-values {
+  display: flex;
+  gap: 20px;
+}
+
+.ema-sub-item, .macd-sub-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ema-label, .macd-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.ema-val-text, .macd-val-text {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* Charts Card Spec */
+.price-chart-container {
+  grid-column: span 12;
+}
+
+.rsi-chart-container {
+  grid-column: span 12;
+}
+
+.chart-wrapper {
+  height: 320px;
+  width: 100%;
+  position: relative;
+}
+
+/* Footer style */
+.app-footer {
+  text-align: center;
+  padding: 24px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-color);
+  margin-top: auto;
+}
+
+/* Keyframes animations */
+@keyframes rotateGently {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes pulseGreen {
+  0% { box-shadow: 0 0 0 0 rgba(14, 203, 129, 0.7); }
+  70% { box-shadow: 0 0 0 8px rgba(14, 203, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(14, 203, 129, 0); }
+}
+
+@keyframes pulseRed {
+  0% { box-shadow: 0 0 0 0 rgba(246, 70, 93, 0.7); }
+  70% { box-shadow: 0 0 0 8px rgba(246, 70, 93, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(246, 70, 93, 0); }
+}
+
+@keyframes flashGreen {
+  0% { color: #ffffff; }
+  50% { color: var(--positive); text-shadow: 0 0 10px rgba(14, 203, 129, 0.5); }
+  100% { color: var(--text-main); }
+}
+
+@keyframes flashRed {
+  0% { color: #ffffff; }
+  50% { color: var(--negative); text-shadow: 0 0 10px rgba(246, 70, 93, 0.5); }
+  100% { color: var(--text-main); }
+}
+
+/* Responsive */
+@media (max-width: 992px) {
+  .price-card, .indicators-card {
+    grid-column: span 12;
+  }
+}
+
+@media (max-width: 576px) {
+  .app-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .price-display {
+    font-size: 2.2rem;
+  }
+  .chart-wrapper {
+    height: 240px;
+  }
+}

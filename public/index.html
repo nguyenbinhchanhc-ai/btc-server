@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BTC Real-Time Monitor | OKX Feed</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="glass-bg"></div>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-area">
+        <div class="btc-icon">
+          <i data-lucide="coins" class="icon-orange"></i>
+        </div>
+        <div class="logo-text">
+          <h1>BTC.MONITOR</h1>
+          <span>Real-time OKX WebSocket Stream</span>
+        </div>
+      </div>
+      <div class="status-area">
+        <span id="connection-status" class="status-badge disconnected">
+          <span class="pulse-dot"></span>
+          <span class="status-text">Đang kết nối...</span>
+        </span>
+      </div>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="dashboard-grid">
+      <!-- Live Price Widget -->
+      <section class="card price-card">
+        <div class="card-header">
+          <span class="card-title">GIÁ BTC/USDT HIỆN TẠI</span>
+          <span class="live-tag">LIVE</span>
+        </div>
+        <div class="price-display-wrapper">
+          <h2 id="btc-price" class="price-display">--.---,--</h2>
+          <span id="btc-change" class="price-change positive">0.00%</span>
+        </div>
+        <div class="price-stats-grid">
+          <div class="stat-item">
+            <span class="stat-label">Cao nhất 24h</span>
+            <span id="btc-high" class="stat-value">--.---</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Thấp nhất 24h</span>
+            <span id="btc-low" class="stat-value">--.---</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Khối lượng 24h</span>
+            <span id="btc-volume" class="stat-value">--.---</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Technical Indicators Widget -->
+      <section class="card indicators-card">
+        <div class="card-header">
+          <span class="card-title">CHỈ BÁO KỸ THUẬT (NẾN 5M)</span>
+        </div>
+        <div class="indicators-grid">
+          <!-- RSI -->
+          <div class="indicator-item">
+            <div class="indicator-meta">
+              <span class="ind-name">RSI (14)</span>
+              <span id="rsi-status" class="ind-status neutral">Chờ dữ liệu</span>
+            </div>
+            <div class="ind-value-wrapper">
+              <span id="rsi-val" class="ind-value">--.--</span>
+            </div>
+            <div class="progress-bar-container">
+              <div id="rsi-bar" class="progress-bar" style="width: 50%"></div>
+            </div>
+          </div>
+
+          <!-- EMA -->
+          <div class="indicator-item">
+            <div class="indicator-meta">
+              <span class="ind-name">EMA (12 / 26)</span>
+              <span id="ema-cross-status" class="ind-status neutral">Chờ dữ liệu</span>
+            </div>
+            <div class="ema-values">
+              <div class="ema-sub-item">
+                <span class="ema-label">EMA12</span>
+                <span id="ema12-val" class="ema-val-text">--.--</span>
+              </div>
+              <div class="ema-sub-item">
+                <span class="ema-label">EMA26</span>
+                <span id="ema26-val" class="ema-val-text">--.--</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- MACD -->
+          <div class="indicator-item">
+            <div class="indicator-meta">
+              <span class="ind-name">MACD (12, 26, 9)</span>
+              <span id="macd-status" class="ind-status neutral">Chờ dữ liệu</span>
+            </div>
+            <div class="macd-values">
+              <div class="macd-sub-item">
+                <span class="macd-label">MACD</span>
+                <span id="macd-val" class="macd-val-text">--.--</span>
+              </div>
+              <div class="macd-sub-item">
+                <span class="macd-label">Signal</span>
+                <span id="macd-sig-val" class="macd-val-text">--.--</span>
+              </div>
+              <div class="macd-sub-item">
+                <span class="macd-label">Hist</span>
+                <span id="macd-hist-val" class="macd-val-text">--.--</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Charts Section -->
+      <section class="card chart-card price-chart-container">
+        <div class="card-header">
+          <span class="card-title">BIỂU ĐỒ GIÁ & EMA (5M)</span>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="priceChart"></canvas>
+        </div>
+      </section>
+
+      <section class="card chart-card rsi-chart-container">
+        <div class="card-header">
+          <span class="card-title">BIỂU ĐỒ RSI (14)</span>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="rsiChart"></canvas>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>Hệ thống giám sát giá trị Crypto thời gian thực &copy; 2026. Kết nối bảo mật thông qua OKX WebSocket API.</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
